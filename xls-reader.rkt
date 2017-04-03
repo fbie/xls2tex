@@ -73,7 +73,7 @@
 
 ;; Advance row by one.
 (define (xls/pos-next-row curr)
-  (pos (+ 1 (pos-row curr)) 1))
+  (pos (add1 (pos-row curr)) 1))
 
 ;; Filter elements recursively from a list xs using the given predicate.
 (define (xls/filter-recursive predicate lst)
