@@ -20,6 +20,7 @@
 ;; OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 ;; SOFTWARE.
 
+(require racket/cmdline)
 (require xml)
 
 ;;; Construction of a usable row- and cell-representation.
@@ -175,10 +176,6 @@
             (row (cdr irow))]
         (xls/row->cells (xls/filter-type 'Cell row) pos)))))
 
-;; TODO: For testing, delete later.
-(define doc (xls/read "test.xml"))
-(define rows (xls/sheet->cells "Sheet1" doc))
-
 
 ;;; Cell reference formatting.
 
@@ -309,6 +306,7 @@
     (display (tex/tab-format cols))
     (display "]{")
     (newline)
+    (display (tex/sheet-header cols))
     (for/fold ([r 1])
               ([row rows])
       ;; Newline comes always before cell contents.
@@ -321,7 +319,34 @@
         c + 1)
       r + 1))
   (display tex-newline)
-  (newline)
-  (display "\\end{tabular}"))
+  (print "\n")
+  (display "\\end{tabular}")
+  (newline))
 
-(tex/print-rows (xls/r1c1rows->a1rows rows))
+
+
+;;; Command line arguments and execution.
+
+(define sheet-name (make-parameter "Sheet1"))
+(define r1c1 (make-parameter #f))
+
+(define xls-file
+  (command-line
+   #:program "xls2tex"
+   #:once-each
+   [("-s" "--sheet")
+    sheet
+    "Name of the sheet to convert to LaTeX code."
+    (sheet-name sheet)]
+
+   [("-r" "--r1c1")
+    "Use R1C1 reference style instead of A1."
+    (r1c1 #t)]
+
+   #:args (filename)
+   filename))
+
+(let ([sheet (xls/sheet->cells (sheet-name) (xls/read xls-file))])
+  (tex/print-rows (if (r1c1)
+                      sheet
+                      (xls/r1c1rows->a1rows sheet))))
