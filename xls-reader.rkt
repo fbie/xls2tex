@@ -175,13 +175,15 @@
 ;; Return a string that represents a row in TeX table format
 (define (xls/row->tex row pos)
   (cons
-   (foldl (λ (cell state)
-            (let [(res (xls/cell->tex cell (cdr state)))]
-              (cons
-               (format "~a ~a" (car state) (car res))
-               (cdr res))))
-          (cons (number->string (pos-row pos)) pos)
-          (xls/filter-type 'Cell row))
+   ;; xls/cell->tex returns a pair (str . pos), so we need to strip
+   ;; the pos to get the string result.
+   (car (foldl (λ (cell state)
+                 (let [(res (xls/cell->tex cell (cdr state)))]
+                   (cons
+                    (format "~a ~a" (car state) (car res))
+                    (cdr res))))
+               (cons (number->string (pos-row pos)) pos)
+               (xls/filter-type 'Cell row)))
    (xls/pos-next-row pos)))
 
 ;; Get the first sheet with the correct sheet name. There should not
