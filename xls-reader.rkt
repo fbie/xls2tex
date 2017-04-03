@@ -2,25 +2,7 @@
 
 (require xml)
 
-;; Works up to column 26. I am too lazy to implement a general
-;; solution, and how likely is it that our spreadsheets exceed 26
-;; columns?
-;; TODO: Make work for columns > 26.
-(define (xls/c1->column col)
-    (string (integer->char (+ 64 col))))
-
-(struct cellref (col row cabs rabs)
-  #:guard (λ (col row cabs rabs name)
-            (unless (and (number? col) (number? row) (boolean? cabs) (boolean? rabs))
-              (error "Not a valid cellref."))
-            (values col row cabs rabs))
-  #:transparent)
-
-(define (xls/cellref-row-abs? ref)
-  (cellref-rabs ref))
-
-(define (xls/cellref-col-abs? ref)
-  (cellref-cabs ref))
+;;; Construction of a usable row- and cell-representation.
 
 (struct pos (row col)
   #:guard (λ (row col name)
@@ -31,54 +13,13 @@
 
 (define zero (pos 0 0))
 
-;; Format for R1C1. This is easy, we only need to decide on the
-;; formatting string.
-(define (xls/print-r1c1 ref)
-  (let [(r (format (if (xls/cellref-row-abs? ref) "R~a" "R[~a]") (cellref-row ref)))
-        (c (format (if (xls/cellref-col-abs? ref) "C~a" "C[~a]") (cellref-col ref)))]
-    (string-join (list r c) "")))
-
-;; Format for A1. This is more complicated, because we need to
-;; compute relative references wrt. the current position.
-(define (xls/print-a1 ref pos)
-  (let [(r (if (xls/cellref-row-abs? ref)
-               (format "$~a" (cellref-row ref))
-               (number->string (+ (cellref-row ref) (pos-row pos)))))
-        (c (if (xls/cellref-col-abs? ref)
-               (format "$~a" (xls/c1->column (cellref-col ref)))
-               (xls/c1->column (+ (cellref-col ref) (pos-col pos)))))]
-    (string-join (list c r) "")))
-
-;; Print a cell reference using either 'R1C1 or 'A1 styles. If 'A1 is
-;; desired, you need to pass in a valid position, too.
-(define (xls/cellref-print style ref pos)
-  (match style
-    ['R1C1 (xls/print-r1c1 ref)]
-    ['A1 (xls/print-a1 ref pos)]))
-
-;; Parse a R1C1 formatted cell reference and return a r1c1ref struct.
-(define (xls/parse-r1c1 refstring)
-  (let [(get-num (λ (s) (string->number (or (car (regexp-match #px"[-]?\\d+" s)) "0"))))
-        (row-abs (regexp-match #px"R\\d+" refstring))
-        (row-rel (regexp-match #px"R\\[[+-]\\d+\\]" refstring))
-        (col-abs (regexp-match #px"C\\d+" refstring))
-        (col-rel (regexp-match #px"C\\[[+-]\\d+\\]" refstring))]
-    (cellref (get-num (car (or col-rel col-abs)))
-             (get-num (car (or row-rel row-abs)))
-             col-abs
-             row-abs)))
-
-;; Convert a R1C1 formatted refstring to an A1 formatted refstring
-;; using pos.
-(define (xls/r1c1->a1 refstring pos)
-  (xls/cellref-print 'A1 (xls/parse-r1c1 refstring) pos))
-
+;; Advance column by one or set to n.
 (define (xls/pos-next-col curr [n #f])
   (if n
       (pos (pos-row curr) (string->number n))
       (pos (pos-row curr) (add1 (pos-col curr)))))
 
-;; Advance row by one.
+;; Advance row by one or set to n.
 (define (xls/pos-next-row curr [n #f])
   (if n
       (pos (string->number n) (pos-col curr))
@@ -150,19 +91,6 @@
 (define (xls/get-name elem)
   (xls/get 'ss:Name elem))
 
-;; Take all pairs from reps and apply them to str using
-;; string-replace. The result is str with all occurrences of the first
-;; element replaced with the second element for all pairs in reps.
-(define (xls/replace-all reps str)
-  (foldr (λ (rep str) (string-replace str (car rep) (cdr rep))) str reps))
-
-;; Convert an R1C1 formula into an A1 formula for some absolute
-;; position.
-(define (xls/r1c1formula->a1formula formula pos)
-  (let* [(refs (regexp-match* #px"R\\[?[+-]\\d+\\]?C\\[?-?\\d+\\]?" formula))
-         (reps (map (λ (ref) (cons ref (xls/r1c1->a1 ref pos))) refs))]
-    (xls/replace-all reps formula)))
-
 ;; A cell consists of an expression and a position.
 ;; TODO: Maybe only use column?
 (struct cell (expr pos)
@@ -230,3 +158,81 @@
 ;; TODO: For testing, delete later.
 (define doc (xls/read "test.xml"))
 (define rows (xls/sheet->cells "Sheet1" doc))
+
+
+;;; Cell reference formatting.
+
+;; Works up to column 26. I am too lazy to implement a general
+;; solution, and how likely is it that our spreadsheets exceed 26
+;; columns?
+;; TODO: Make work for columns > 26.
+(define (xls/c1->column col)
+    (string (integer->char (+ 64 col))))
+
+(struct cellref (col row cabs rabs)
+  #:guard (λ (col row cabs rabs name)
+            (unless (and (number? col) (number? row) (boolean? cabs) (boolean? rabs))
+              (error "Not a valid cellref."))
+            (values col row cabs rabs))
+  #:transparent)
+
+(define (xls/cellref-row-abs? ref)
+  (cellref-rabs ref))
+
+(define (xls/cellref-col-abs? ref)
+  (cellref-cabs ref))
+
+;; Format for R1C1. This is easy, we only need to decide on the
+;; formatting string.
+(define (xls/print-r1c1 ref)
+  (let [(r (format (if (xls/cellref-row-abs? ref) "R~a" "R[~a]") (cellref-row ref)))
+        (c (format (if (xls/cellref-col-abs? ref) "C~a" "C[~a]") (cellref-col ref)))]
+    (string-join (list r c) "")))
+
+;; Format for A1. This is more complicated, because we need to
+;; compute relative references wrt. the current position.
+(define (xls/print-a1 ref pos)
+  (let [(r (if (xls/cellref-row-abs? ref)
+               (format "$~a" (cellref-row ref))
+               (number->string (+ (cellref-row ref) (pos-row pos)))))
+        (c (if (xls/cellref-col-abs? ref)
+               (format "$~a" (xls/c1->column (cellref-col ref)))
+               (xls/c1->column (+ (cellref-col ref) (pos-col pos)))))]
+    (string-join (list c r) "")))
+
+;; Print a cell reference using either 'R1C1 or 'A1 styles. If 'A1 is
+;; desired, you need to pass in a valid position, too.
+(define (xls/cellref-print style ref [pos zero])
+  (match style
+    ['R1C1 (xls/print-r1c1 ref)]
+    ['A1 (xls/print-a1 ref pos)]))
+
+;; Parse a R1C1 formatted cell reference and return a r1c1ref struct.
+(define (xls/parse-r1c1 refstring)
+  (let [(get-num (λ (s) (string->number (or (car (regexp-match #px"[-]?\\d+" s)) "0"))))
+        (row-abs (regexp-match #px"R\\d+" refstring))
+        (row-rel (regexp-match #px"R\\[[+-]\\d+\\]" refstring))
+        (col-abs (regexp-match #px"C\\d+" refstring))
+        (col-rel (regexp-match #px"C\\[[+-]\\d+\\]" refstring))]
+    (cellref (get-num (car (or col-rel col-abs)))
+             (get-num (car (or row-rel row-abs)))
+             col-abs
+             row-abs)))
+
+;; Convert a R1C1 formatted refstring to an A1 formatted refstring
+;; using pos.
+(define (xls/r1c1->a1 refstring pos)
+  (xls/cellref-print 'A1 (xls/parse-r1c1 refstring) pos))
+
+;; Take all pairs from reps and apply them to str using
+;; string-replace. The result is str with all occurrences of the first
+;; element replaced with the second element for all pairs in reps.
+(define (xls/replace-all reps str)
+  (foldr (λ (rep str) (string-replace str (car rep) (cdr rep))) str reps))
+
+;; Convert an R1C1 formula into an A1 formula for some absolute
+;; position.
+(define (xls/r1c1formula->a1formula formula pos)
+  (let* [(refs (regexp-match* #px"R\\[?[+-]\\d+\\]?C\\[?-?\\d+\\]?" formula))
+         (reps (map (λ (ref) (cons ref (xls/r1c1->a1 ref pos))) refs))]
+    (xls/replace-all reps formula)))
