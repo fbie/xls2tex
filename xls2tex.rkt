@@ -122,12 +122,6 @@
               (values expr pos))
   #:transparent)
 
-;; Convert a cell to a TeX string.
-(define (cell->tex cell refstyle)
-  (match refstyle
-    ['R1C1 (cell-expr cell)]
-    ['A1 (xls/r1c1formula->a1formula (cell-expr cell) (cell-pos cell))]))
-
 ;; Return a string that represents a cell in the spreadsheet.
 (define (xls/parse-cell c p)
   (let* [(ccell (cdr c))
@@ -184,7 +178,7 @@
 ;; solution, and how likely is it that our spreadsheets exceed 26
 ;; columns?
 ;; TODO: Make work for columns > 26.
-(define (xls/c1->column col)
+(define (c1->column col)
     (string (integer->char (+ 64 col))))
 
 (struct cellref (col row cabs rabs)
@@ -194,39 +188,39 @@
             (values col row cabs rabs))
   #:transparent)
 
-(define (xls/cellref-row-abs? ref)
+(define (cellref-row-abs? ref)
   (cellref-rabs ref))
 
-(define (xls/cellref-col-abs? ref)
+(define (cellref-col-abs? ref)
   (cellref-cabs ref))
 
 ;; Format for R1C1. This is easy, we only need to decide on the
 ;; formatting string.
-(define (xls/print-r1c1 ref)
-  (let [(r (~a (format (if (xls/cellref-row-abs? ref) "R~a" "R[~a]") (cellref-row ref))))
-        (c (~a (format (if (xls/cellref-col-abs? ref) "C~a" "C[~a]") (cellref-col ref))))]
+(define (print-r1c1 ref)
+  (let [(r (~a (format (if (cellref-row-abs? ref) "R~a" "R[~a]") (cellref-row ref))))
+        (c (~a (format (if (cellref-col-abs? ref) "C~a" "C[~a]") (cellref-col ref))))]
     (string-join (list r c) "")))
 
 ;; Format for A1. This is more complicated, because we need to
 ;; compute relative references wrt. the current position.
-(define (xls/print-a1 ref pos)
-  (let [(r (if (xls/cellref-row-abs? ref)
+(define (print-a1 ref pos)
+  (let [(r (if (cellref-row-abs? ref)
                (~a "$" (cellref-row ref))
                (number->string (+ (cellref-row ref) (pos-row pos)))))
-        (c (if (xls/cellref-col-abs? ref)
-               (~a "$" (xls/c1->column (cellref-col ref)))
-               (xls/c1->column (+ (cellref-col ref) (pos-col pos)))))]
+        (c (if (cellref-col-abs? ref)
+               (~a "$" (c1->column (cellref-col ref)))
+               (c1->column (+ (cellref-col ref) (pos-col pos)))))]
     (string-join (list c r) "")))
 
 ;; Print a cell reference using either 'R1C1 or 'A1 styles. If 'A1 is
 ;; desired, you need to pass in a valid position, too.
-(define (xls/cellref-print style ref [pos zero])
+(define (cellref-print style ref [pos zero])
   (match style
-    ['R1C1 (xls/print-r1c1 ref)]
-    ['A1 (xls/print-a1 ref pos)]))
+    ['R1C1 (print-r1c1 ref)]
+    ['A1 (print-a1 ref pos)]))
 
 ;; Parse a R1C1 formatted cell reference and return a r1c1ref struct.
-(define (xls/parse-r1c1 refstring)
+(define (parse-r1c1 refstring)
   (let [(get-num (λ (s) (string->number (car (regexp-match #px"-?\\d+" s)))))
         (row-abs (regexp-match #px"R\\d+" refstring))
         (row-rel (regexp-match #px"R\\[-?\\d+\\]" refstring))
@@ -243,35 +237,36 @@
 
 ;; Convert a R1C1 formatted refstring to an A1 formatted refstring
 ;; using pos.
-(define (xls/r1c1->a1 refstring pos)
-  (xls/cellref-print 'A1 (xls/parse-r1c1 refstring) pos))
+(define (r1c1->a1 refstring pos)
+  (cellref-print 'A1 (parse-r1c1 refstring) pos))
 
 ;; Take all pairs from reps and apply them to str using
 ;; string-replace. The result is str with all occurrences of the first
 ;; element replaced with the second element for all pairs in reps.
-(define (xls/replace-all reps str)
+(define (replace-all reps str)
   (if (and reps (list? reps) (not (empty? reps)))
-      (xls/replace-all (cdr reps) (string-replace str (caar reps) (cdar reps)))
+      (replace-all (cdr reps) (string-replace str (caar reps) (cdar reps)))
       str))
 
 ;; Convert an R1C1 formula into an A1 formula for some absolute
 ;; position.
-(define (xls/r1c1formula->a1formula formula pos)
+(define (formula/r1c1->a1 formula pos)
   (let* [(refs (regexp-match* #px"R\\[?-?\\d*\\]?C\\[?-?\\d*\\]?" formula))
          (reps (if refs
-                   (map (λ (ref) (cons ref (xls/r1c1->a1 ref pos))) refs)
+                   (map (λ (ref) (cons ref (r1c1->a1 ref pos))) refs)
                    empty))]
-    (xls/replace-all reps formula)))
+    (replace-all reps formula)))
 
 ;; Convert all cells in this collection of rows into A1 reference
 ;; format.
-(define (xls/r1c1rows->a1rows rows)
+(define (sheet/r1c1->a1 rows)
   (for/list ([r rows])
     (for/list [(c r)]
       ;; Avoid unnecessary parsing and memory allocation.
       (if (string-prefix? (cell-expr c) "=")
-          (cell (xls/r1c1formula->a1formula (cell-expr c) (cell-pos c)) (cell-pos c))
+          (cell (formula/r1c1->a1 (cell-expr c) (cell-pos c)) (cell-pos c))
           c))))
+
 
 
 ;;; Generating TeX code.
@@ -280,11 +275,11 @@
 (define tex-tabsep " &")
 (define tex-cbar "c|")
 
-(define (tex/string-repeat n s)
+(define (string-repeat n s)
   (string-append* (make-list n s)))
 
 (define (tex/cell->tex c [cols 0])
-  (~a (tex/string-repeat (- (pos-col (cell-pos c)) cols) tex-tabsep)
+  (~a (string-repeat (- (pos-col (cell-pos c)) cols) tex-tabsep)
       " \\texttt{"
       (cell-expr c)
       "}"))
@@ -293,24 +288,24 @@
   (~a row tex-tabsep))
 
 (define (tex/tab-format cols)
-  (~a "|" (tex/string-repeat (add1 cols) tex-cbar)))
+  (~a "|" (string-repeat (add1 cols) tex-cbar)))
 
 (define (tex/sheet-header cols)
   (~a tex-tabsep
       " "
-      (string-join (build-list cols (λ (n) (xls/c1->column (add1 n))))
+      (string-join (build-list cols (λ (n) (c1->column (add1 n))))
                    (~a tex-tabsep " "))))
 
 (define (xls/columns rows)
   (foldl max 0 (map pos-col (map cell-pos (map last rows)))))
 
-(define (tex/print-rows rows)
-  (let [(cols (xls/columns rows))]
+(define (tex/print-sheet sheet)
+  (let [(cols (xls/columns sheet))]
     (display (~a "\\begin{tabular}[" (tex/tab-format cols) "]"))
     (newline)
     (display (tex/sheet-header cols))
     (for/fold ([r 1])
-              ([row rows])
+              ([row sheet])
       ;; Newline comes always before cell contents.
       (display tex-newline)
       (newline)
@@ -349,6 +344,6 @@
    filename))
 
 (let ([sheet (xls/sheet->cells (sheet-name) (xls/read xls-file))])
-  (tex/print-rows (if (r1c1)
-                      sheet
-                      (xls/r1c1rows->a1rows sheet))))
+  (tex/print-sheet (if (r1c1)
+                       sheet
+                       (sheet/r1c1->a1 sheet))))
