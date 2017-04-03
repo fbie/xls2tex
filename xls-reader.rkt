@@ -209,13 +209,17 @@
 
 ;; Parse a R1C1 formatted cell reference and return a r1c1ref struct.
 (define (xls/parse-r1c1 refstring)
-  (let [(get-num (λ (s) (string->number (or (car (regexp-match #px"[-]?\\d+" s)) "0"))))
+  (let [(get-num (λ (s) (string->number (car (regexp-match #px"-?\\d+" s)))))
         (row-abs (regexp-match #px"R\\d+" refstring))
-        (row-rel (regexp-match #px"R\\[[+-]\\d+\\]" refstring))
+        (row-rel (regexp-match #px"R\\[-?\\d+\\]" refstring))
         (col-abs (regexp-match #px"C\\d+" refstring))
-        (col-rel (regexp-match #px"C\\[[+-]\\d+\\]" refstring))]
-    (cellref (get-num (car (or col-rel col-abs)))
-             (get-num (car (or row-rel row-abs)))
+        (col-rel (regexp-match #px"C\\[-?\\d+\\]" refstring))]
+    (cellref (if (or col-rel col-abs)
+                 (get-num (car (or col-rel col-abs)))
+                 0)
+             (if (or row-rel row-abs)
+                 (get-num (car (or row-rel row-abs)))
+                 0)
              col-abs
              row-abs)))
 
@@ -228,11 +232,25 @@
 ;; string-replace. The result is str with all occurrences of the first
 ;; element replaced with the second element for all pairs in reps.
 (define (xls/replace-all reps str)
-  (foldr (λ (rep str) (string-replace str (car rep) (cdr rep))) str reps))
+  (if (and reps (list? reps) (not (empty? reps)))
+      (xls/replace-all (cdr reps) (string-replace str (caar reps) (cdar reps)))
+      str))
 
 ;; Convert an R1C1 formula into an A1 formula for some absolute
 ;; position.
 (define (xls/r1c1formula->a1formula formula pos)
-  (let* [(refs (regexp-match* #px"R\\[?[+-]\\d+\\]?C\\[?-?\\d+\\]?" formula))
-         (reps (map (λ (ref) (cons ref (xls/r1c1->a1 ref pos))) refs))]
+  (let* [(refs (regexp-match* #px"R\\[?-?\\d*\\]?C\\[?-?\\d*\\]?" formula))
+         (reps (if refs
+                   (map (λ (ref) (cons ref (xls/r1c1->a1 ref pos))) refs)
+                   empty))]
     (xls/replace-all reps formula)))
+
+;; Convert all cells in this collection of rows into A1 reference
+;; format.
+(define (xls/r1c1rows->a1rows rows)
+  (for/list ([r rows])
+    (for/list [(c r)]
+      ;; Avoid unnecessary parsing and memory allocation.
+      (if (string-prefix? (cell-expr c) "=")
+          (cell (xls/r1c1formula->a1formula (cell-expr c) (cell-pos c)) (cell-pos c))
+          c))))
