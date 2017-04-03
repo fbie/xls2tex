@@ -29,11 +29,7 @@
             (values row col))
   #:transparent)
 
-(define (xls/reset-col p)
-  (pos (pos-row p) 1))
-
-;; Always start at index (1, 1).
-(define xls-start-pos (pos 1 1))
+(define zero (pos 0 0))
 
 ;; Format for R1C1. This is easy, we only need to decide on the
 ;; formatting string.
@@ -144,7 +140,7 @@
 
 ;; Retrieve an index offset from an element.
 (define (xls/get-index elem)
-  (xls/get 'ss:Index (car elem)))
+  (or (xls/get 'ss:Index elem) (xls/get 'ss:Index (car elem))))
 
 ;; Retrieve data from an element, if any.
 (define (xls/get-data elem)
@@ -224,14 +220,12 @@
   (let* [(rows (xls/filter-type 'Row (xls/xexpr-assoc 'Table (xls/get-sheet sheet doc))))
          ;; Compute row numbers; allows us to use map instead of scan.
          (irows (cdr (scan (λ (pre row) (cons (xls/pos-next-row (car pre) (xls/get-index row)) row))
-                           (cons (pos 0 0) empty)
+                           (cons zero empty)
                            rows)))]
     (for/list ([irow irows])
       (let [(pos (car irow))
             (row (cdr irow))]
-        (xls/row->cells (xls/filter-type 'Cell row) pos)))
-    ;; irows
-    ))
+        (xls/row->cells (xls/filter-type 'Cell row) pos)))))
 
 ;; TODO: For testing, delete later.
 (define doc (xls/read "test.xml"))
