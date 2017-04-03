@@ -254,3 +254,54 @@
       (if (string-prefix? (cell-expr c) "=")
           (cell (xls/r1c1formula->a1formula (cell-expr c) (cell-pos c)) (cell-pos c))
           c))))
+
+
+;;; Generating TeX code.
+
+(define tex-newline "\\\\ \\hline\n")
+(define tex-tabsep "&")
+(define tex-cbar "c|")
+
+(define (tex/string-repeat n s)
+  (string-append* (make-list n s)))
+
+(define (tex/cell->tex c [cols 0])
+  (format "~s \\texttt{~s} "
+          ;; Offset
+          (tex/string-repeat (- (pos-col (cell-pos c)) cols) tex-tabsep)
+          (cell-expr c)))
+
+(define (tex/beginline idx)
+  (format "~a ~s" idx tex-tabsep))
+
+(define (tex/tab-format cols)
+  (format "|~s" (tex/string-repeat (add1 cols) tex-cbar)))
+
+(define (tex/sheet-header cols)
+  (string-join (build-list (add1 cols) xls/c1->column) tex-tabsep))
+
+(define (xls/columns rows)
+  (foldl max 0 (map pos-col (map cell-pos (map last rows)))))
+
+(define (tex/print-rows rows)
+  (let [(cols (xls/columns rows))]
+    (display "\\begin{tabular}[")
+    (display (tex/tab-format cols))
+    (display "]{")
+    (newline)
+    (for/fold ([r 1])
+              ([row rows])
+      ;; Newline comes always before cell contents.
+      (display tex-newline)
+      (newline)
+      (display (tex/beginline r))
+      (for/fold ([c 1])
+                ([cell row])
+        (display (tex/cell->tex cell c))
+        c + 1)
+      r + 1))
+  (display tex-newline)
+  (newline)
+  (display "\\end{tabular}"))
+
+(tex/print-rows (xls/r1c1rows->a1rows rows))
