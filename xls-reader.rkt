@@ -125,20 +125,24 @@
 (define (xls/get-formula elem)
   (xls/get 'ss:Formula (car elem)))
 
-;; Retrieve an index offset from an element, if any.
+;; Retrieve an index offset from an element or default value 1.
 (define (xls/get-index elem)
   (let [(idx (xls/get 'ss:Index (car elem)))]
     (if idx
         (string->number idx)
         1)))
 
-;; Retrieve datra from an element, if any.
+;; Retrieve data from an element, if any.
 (define (xls/get-data elem)
   (car (cdr (cdr (xls/xexpr-assoc 'Data elem)))))
 
+;; Retrieve the element's name tag.
+(define (xls/get-name elem)
+  (xls/get 'ss:Name elem))
+
 ;; Take all pairs from reps and apply them to str using
 ;; string-replace. The result is str with all occurrences of the first
-;; element replaced with the second element for all peirs in reps.
+;; element replaced with the second element for all pairs in reps.
 (define (xls/replace-all reps str)
   (foldr (λ (rep str) (string-replace str (car rep) (cdr rep))) str reps))
 
@@ -149,17 +153,20 @@
          (reps (map (λ (ref) (cons ref (xls/r1c1->a1 ref pos))) refs))]
     (xls/replace-all reps formula)))
 
-;; Return a string that represents a cell in TeX table format.
+;; Return a string that represents a cell in TeX table format together
+;; with the next index. The latter is necessary because the cell may
+;; contain an offset, which we don't want to know about from the
+;; outside.
 (define (xls/cell->tex cell pos)
   (let* [(ccell (cdr cell))
          (formula (xls/get-formula ccell))
-         (index (xls/get-index ccell)) ;; TODO: Meh.
+         (index (xls/get-index ccell))
          (data (xls/get-data ccell))
          (npos (xls/pos-advance-col pos index))]
     (cons
      (format "~a \\texttt{~a}" ;; Only for skipping rows.
-             (string-append* (make-list index " &"))
-             (or (if formula (xls/r1c1formula->a1formula formula npos) #f) data))
+             (string-append* (make-list index " &")) ;; Skip rows.
+             (or (if formula (xls/r1c1formula->a1formula formula npos) #f) data)) ;; Build cell content.
      npos)))
 
 (define (xls/filter-type type lst)
@@ -176,9 +183,6 @@
           (cons (number->string (pos-row pos)) pos)
           (xls/filter-type 'Cell row))
    (xls/pos-next-row pos)))
-
-(define (xls/get-name elem)
-  (xls/get 'ss:Name elem))
 
 ;; Get the first sheet with the correct sheet name. There should not
 ;; be two sheets with the same name.
