@@ -93,9 +93,9 @@
       lst))
 
 ;; Unwrap lists recursively.
-(define (xls/unwrap-recursive lst)
+(define (xls/flatten lst)
   (if (list? lst)
-      (xls/unwrap (map xls/unwrap-recursive lst))
+      (xls/unwrap (map xls/flatten lst))
       lst))
 
 ;; Read the XLS formatted file into an xexpr.
@@ -106,7 +106,7 @@
                      (not (and (string? x)
                                (regexp-match #px"\r\n\\s*" x)))))
         (doc (xml->xexpr (document-element (with-input-from-file filename read-xml))))]
-    (xls/unwrap-recursive (xls/filter-recursive predicate doc))))
+    (xls/flatten (xls/filter-recursive predicate doc))))
 
 ;; A variant of assoc that is more robust to non-pairs in lists.
 (define (xls/xexpr-assoc key dict)
