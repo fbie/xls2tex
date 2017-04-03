@@ -21,6 +21,7 @@
 ;; SOFTWARE.
 
 (require racket/cmdline)
+(require racket/format)
 (require xml)
 
 ;;; Construction of a usable row- and cell-representation.
@@ -202,18 +203,18 @@
 ;; Format for R1C1. This is easy, we only need to decide on the
 ;; formatting string.
 (define (xls/print-r1c1 ref)
-  (let [(r (format (if (xls/cellref-row-abs? ref) "R~a" "R[~a]") (cellref-row ref)))
-        (c (format (if (xls/cellref-col-abs? ref) "C~a" "C[~a]") (cellref-col ref)))]
+  (let [(r (~a (format (if (xls/cellref-row-abs? ref) "R~a" "R[~a]") (cellref-row ref))))
+        (c (~a (format (if (xls/cellref-col-abs? ref) "C~a" "C[~a]") (cellref-col ref))))]
     (string-join (list r c) "")))
 
 ;; Format for A1. This is more complicated, because we need to
 ;; compute relative references wrt. the current position.
 (define (xls/print-a1 ref pos)
   (let [(r (if (xls/cellref-row-abs? ref)
-               (format "$~a" (cellref-row ref))
+               (~a "$" (cellref-row ref))
                (number->string (+ (cellref-row ref) (pos-row pos)))))
         (c (if (xls/cellref-col-abs? ref)
-               (format "$~a" (xls/c1->column (cellref-col ref)))
+               (~a "$" (xls/c1->column (cellref-col ref)))
                (xls/c1->column (+ (cellref-col ref) (pos-col pos)))))]
     (string-join (list c r) "")))
 
@@ -275,36 +276,37 @@
 
 ;;; Generating TeX code.
 
-(define tex-newline "\\\\ \\hline\n")
-(define tex-tabsep "&")
+(define tex-newline " \\\\ \\hline")
+(define tex-tabsep " &")
 (define tex-cbar "c|")
 
 (define (tex/string-repeat n s)
   (string-append* (make-list n s)))
 
 (define (tex/cell->tex c [cols 0])
-  (format "~s \\texttt{~s} "
-          ;; Offset
-          (tex/string-repeat (- (pos-col (cell-pos c)) cols) tex-tabsep)
-          (cell-expr c)))
+  (~a (tex/string-repeat (- (pos-col (cell-pos c)) cols) tex-tabsep)
+      " \\texttt{"
+      (cell-expr c)
+      "}"))
 
-(define (tex/beginline idx)
-  (format "~a ~s" idx tex-tabsep))
+(define (tex/beginline row)
+  (~a row tex-tabsep))
 
 (define (tex/tab-format cols)
-  (format "|~s" (tex/string-repeat (add1 cols) tex-cbar)))
+  (~a "|" (tex/string-repeat (add1 cols) tex-cbar)))
 
 (define (tex/sheet-header cols)
-  (string-join (build-list (add1 cols) xls/c1->column) tex-tabsep))
+  (~a tex-tabsep
+      " "
+      (string-join (build-list cols (λ (n) (xls/c1->column (add1 n))))
+                   (~a tex-tabsep " "))))
 
 (define (xls/columns rows)
   (foldl max 0 (map pos-col (map cell-pos (map last rows)))))
 
 (define (tex/print-rows rows)
   (let [(cols (xls/columns rows))]
-    (display "\\begin{tabular}[")
-    (display (tex/tab-format cols))
-    (display "]{")
+    (display (~a "\\begin{tabular}[" (tex/tab-format cols) "]"))
     (newline)
     (display (tex/sheet-header cols))
     (for/fold ([r 1])
@@ -319,7 +321,7 @@
         c + 1)
       r + 1))
   (display tex-newline)
-  (print "\n")
+  (newline)
   (display "\\end{tabular}")
   (newline))
 
