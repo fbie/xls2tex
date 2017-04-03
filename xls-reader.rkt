@@ -9,7 +9,12 @@
 (define (xls/c1->column col)
     (string (integer->char (+ 64 col))))
 
-(struct cellref (col row cabs rabs) #:transparent)
+(struct cellref (col row cabs rabs)
+  #:guard (λ (col row cabs rabs name)
+            (unless (and (number? col) (number? row) (boolean? cabs) (boolean? rabs))
+              (error "Not a valid cellref."))
+            (values col row cabs rabs))
+  #:transparent)
 
 (define (xls/cellref-row-abs? ref)
   (cellref-rabs ref))
@@ -17,7 +22,15 @@
 (define (xls/cellref-col-abs? ref)
   (cellref-cabs ref))
 
-(struct pos (row col) #:transparent)
+(struct pos (row col)
+  #:guard (λ (row col name)
+            (unless (and (number? row) (number? col))
+              (error "Not a valid pos."))
+            (values row col))
+  #:transparent)
+
+(define (xls/reset-col p)
+  (pos (pos-row p) 1))
 
 ;; Always start at index (1, 1).
 (define xls-start-pos (pos 1 1))
@@ -64,16 +77,16 @@
 (define (xls/r1c1->a1 refstring pos)
   (xls/cellref-print 'A1 (xls/parse-r1c1 refstring) pos))
 
-(define (xls/pos-advance-col curr n)
-  (pos (pos-row curr) (+ n (pos-col curr))))
-
-;; Advance column by one.
-(define (xls/pos-next-col curr)
-  (xls/pos-advance-col curr 1))
+(define (xls/pos-next-col curr [n #f])
+  (if n
+      (pos (pos-row curr) (string->number n))
+      (pos (pos-row curr) (add1 (pos-col curr)))))
 
 ;; Advance row by one.
-(define (xls/pos-next-row curr)
-  (pos (add1 (pos-row curr)) 1))
+(define (xls/pos-next-row curr [n #f])
+  (if n
+      (pos (string->number n) (pos-col curr))
+      (pos (add1 (pos-row curr)) (pos-col curr))))
 
 ;; Filter elements recursively from a list xs using the given predicate.
 (define (xls/filter-recursive predicate lst)
@@ -110,31 +123,32 @@
 
 ;; A variant of assoc that is more robust to non-pairs in lists.
 (define (xls/xexpr-assoc key dict)
-  (if (empty? dict)
+  (if (or (not (list? dict)) (empty? dict))
       #f
       (let [(candidate (car dict))]
         (if (and (list? candidate) (eq? (car candidate) key))
             candidate
             (xls/xexpr-assoc key (cdr dict))))))
 
+;; Get value for some key from an xls structure. Returns #f if the key
+;; doesn't exist.
 (define (xls/get key dict)
   (let [(val (xls/xexpr-assoc key dict))]
-    (if val (car (cdr val)) #f)))
+    (if val
+        (cadr val)
+        #f)))
 
 ;; Retrieve a formula from an element, if any.
 (define (xls/get-formula elem)
   (xls/get 'ss:Formula (car elem)))
 
-;; Retrieve an index offset from an element or default value 1.
+;; Retrieve an index offset from an element.
 (define (xls/get-index elem)
-  (let [(idx (xls/get 'ss:Index (car elem)))]
-    (if idx
-        (string->number idx)
-        1)))
+  (xls/get 'ss:Index (car elem)))
 
 ;; Retrieve data from an element, if any.
 (define (xls/get-data elem)
-  (car (cdr (cdr (xls/xexpr-assoc 'Data elem)))))
+  (caddr (xls/xexpr-assoc 'Data elem)))
 
 ;; Retrieve the element's name tag.
 (define (xls/get-name elem)
@@ -153,38 +167,51 @@
          (reps (map (λ (ref) (cons ref (xls/r1c1->a1 ref pos))) refs))]
     (xls/replace-all reps formula)))
 
-;; Return a string that represents a cell in TeX table format together
-;; with the next index. The latter is necessary because the cell may
-;; contain an offset, which we don't want to know about from the
-;; outside.
-(define (xls/cell->tex cell pos)
-  (let* [(ccell (cdr cell))
+;; A cell consists of an expression and a position.
+;; TODO: Maybe only use column?
+(struct cell (expr pos)
+  #:guard (λ (expr pos name)
+            (unless (and (string? expr) (pos? pos))
+                (error "Not a valid cell."))
+              (values expr pos))
+  #:transparent)
+
+;; Convert a cell to a TeX string.
+(define (cell->tex cell refstyle)
+  (match refstyle
+    ['R1C1 (cell-expr cell)]
+    ['A1 (xls/r1c1formula->a1formula (cell-expr cell) (cell-pos cell))]))
+
+;; Return a string that represents a cell in the spreadsheet.
+(define (xls/parse-cell c p)
+  (let* [(ccell (cdr c))
          (formula (xls/get-formula ccell))
          (index (xls/get-index ccell))
-         (data (xls/get-data ccell))
-         (npos (xls/pos-advance-col pos index))]
-    (cons
-     (format "~a \\texttt{~a}" ;; Only for skipping rows.
-             (string-append* (make-list index " &")) ;; Skip rows.
-             (or (if formula (xls/r1c1formula->a1formula formula npos) #f) data)) ;; Build cell content.
-     npos)))
+         (data (xls/get-data ccell))]
+    (cell (or formula data) (xls/pos-next-col p index))))
 
+;; Retrieve all elements from the xls that are of the given type.
 (define (xls/filter-type type lst)
   (filter (λ (elem) (and (list? elem) (eq? (car elem) type))) lst))
 
-;; Return a string that represents a row in TeX table format
-(define (xls/row->tex row pos)
-  (cons
-   ;; xls/cell->tex returns a pair (str . pos), so we need to strip
-   ;; the pos to get the string result.
-   (car (foldl (λ (cell state)
-                 (let [(res (xls/cell->tex cell (cdr state)))]
-                   (cons
-                    (format "~a ~a" (car state) (car res))
-                    (cdr res))))
-               (cons (number->string (pos-row pos)) pos)
-               (xls/filter-type 'Cell row)))
-   (xls/pos-next-row pos)))
+;; Typical prefix-sum. If lst has n elements, then the result has n +
+;; 1, where the first element is the original prefix.
+(define (scan f pre lst)
+  (match (length lst)
+    [0 (list pre)]
+    [_ (cons pre (scan f (f pre (car lst)) (cdr lst)))]))
+
+;; Return a string that represents a row in TeX table format together
+;; with the last position.
+(define (xls/row->cells row pos)
+  (unless (list? row)
+    (error "Row must be a list!"))
+  (cdr (scan (λ (p c)
+               (unless (cell? p)
+                 (error "Prefix not a cell."))
+               (xls/parse-cell c (cell-pos p)))
+             (cell "" pos) ;; Fake cell that we strip later.
+             row)))
 
 ;; Get the first sheet with the correct sheet name. There should not
 ;; be two sheets with the same name.
@@ -193,19 +220,19 @@
                  (string=? sheetname (xls/get-name sheet)))
                (xls/filter-type 'Worksheet doc))))
 
-(define (xls/sheet->tex sheet doc)
-  (let [(rows (xls/filter-type 'Row (xls/xexpr-assoc 'Table (xls/get-sheet sheet doc))))]
-    (foldl (λ (row state)
-             (let [(res (xls/row->tex row (cdr state)))]
-               (cons
-                (format "~a ~a\\\\ \\hline \n" (car state) (car res))
-                (cdr res))))
-           (cons "##TESTHEADER \\\\ \\hline \n" xls-start-pos)
-           rows)))
-
-(define (xls/doc->tex doc)
-  (xls/filter-type 'Worksheet doc))
+(define (xls/sheet->cells sheet doc)
+  (let* [(rows (xls/filter-type 'Row (xls/xexpr-assoc 'Table (xls/get-sheet sheet doc))))
+         ;; Compute row numbers; allows us to use map instead of scan.
+         (irows (cdr (scan (λ (pre row) (cons (xls/pos-next-row (car pre) (xls/get-index row)) row))
+                           (cons (pos 0 0) empty)
+                           rows)))]
+    (for/list ([irow irows])
+      (let [(pos (car irow))
+            (row (cdr irow))]
+        (xls/row->cells (xls/filter-type 'Cell row) pos)))
+    ;; irows
+    ))
 
 ;; TODO: For testing, delete later.
 (define doc (xls/read "test.xml"))
-(define rows (xls/sheet->tex "Sheet1" doc))
+(define rows (xls/sheet->cells "Sheet1" doc))
