@@ -22,29 +22,30 @@
 ;; Always start at index (1, 1).
 (define xls-start-pos (pos 1 1))
 
+;; Format for R1C1. This is easy, we only need to decide on the
+;; formatting string.
+(define (xls/print-r1c1 ref)
+  (let [(r (format (if (xls/cellref-row-abs? ref) "R~a" "R[~a]") (cellref-row ref)))
+        (c (format (if (xls/cellref-col-abs? ref) "C~a" "C[~a]") (cellref-col ref)))]
+    (string-join (list r c) "")))
+
+;; Format for A1. This is more complicated, because we need to
+;; compute relative references wrt. the current position.
+(define (xls/print-a1 ref pos)
+  (let [(r (if (xls/cellref-row-abs? ref)
+               (format "$~a" (cellref-row ref))
+               (number->string (+ (cellref-row ref) (pos-row pos)))))
+        (c (if (xls/cellref-col-abs? ref)
+               (format "$~a" (xls/c1->column (cellref-col ref)))
+               (xls/c1->column (+ (cellref-col ref) (pos-col pos)))))]
+    (string-join (list c r) "")))
+
 ;; Print a cell reference using either 'R1C1 or 'A1 styles. If 'A1 is
 ;; desired, you need to pass in a valid position, too.
 (define (xls/cellref-print style ref pos)
-  ;; Format for R1C1. This is easy, we only need to decide on the
-  ;; formatting string.
-  (define (r1c1 ref)
-    (let [(r (format (if (xls/cellref-row-abs? ref) "R~a" "R[~a]") (cellref-row ref)))
-          (c (format (if (xls/cellref-col-abs? ref) "C~a" "C[~a]") (cellref-col ref)))]
-      (string-join (list r c) "")))
-
-  ;; Format for A1. This is more complicated, because we need to
-  ;; compute relative references wrt. the current position.
-  (define (a1 ref)
-    (let [(r (if (xls/cellref-row-abs? ref)
-                 (format "$~a" (cellref-row ref))
-                 (number->string (+ (cellref-row ref) (pos-row pos)))))
-          (c (if (xls/cellref-col-abs? ref)
-                 (format "$~a" (xls/c1->column (cellref-col ref)))
-                 (xls/c1->column (+ (cellref-col ref) (pos-col pos)))))]
-      (string-join (list c r) "")))
   (match style
-    ['R1C1 (r1c1 ref)]
-    ['A1 (a1 ref)]))
+    ['R1C1 (xls/print-r1c1 ref)]
+    ['A1 (xls/print-a1 ref pos)]))
 
 ;; Parse a R1C1 formatted cell reference and return a r1c1ref struct.
 (define (xls/parse-r1c1 refstring)
