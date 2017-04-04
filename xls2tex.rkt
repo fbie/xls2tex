@@ -276,7 +276,9 @@
 (define tex-cbar "c|")
 
 (define (string-repeat n s)
-  (string-append* (make-list n s)))
+  (if (< n 0)
+      ""
+      (string-append* (make-list n s))))
 
 (define (tex/cell->tex c [cols 0])
   (~a (string-repeat (- (pos-col (cell-pos c)) cols) tex-tabsep)
@@ -296,25 +298,30 @@
       (string-join (build-list cols (λ (n) (c1->column (add1 n))))
                    (~a tex-tabsep " "))))
 
-(define (tex/print-cells row)
-  (string-join (map cdr (scan (λ (pre cell)
-                                (cons (add1 (car pre)) (tex/cell->tex cell (car pre))))
-                              (cons 1 "")
-                              row))))
+(define (tex/print-cells row cols)
+  (let* [(cells (scan (λ (pre cell)
+                        (cons (add1 (car pre)) (tex/cell->tex cell (car pre))))
+                      (cons 1 "")
+                      row))
+         (coldiff (- cols (car (last cells))))]
+    (~a (string-join (cdr (map cdr cells)) tex-tabsep) ;; Columns with content, strip dummy cell.
+        (string-repeat coldiff tex-tabsep)))) ;; Possibly missing columns.
 
+;; Expand empty rows. Those are not represented, but Latex requires us
+;; to be explicit about them.
 (define (expand-rows rows [i 1])
   (if (empty? rows)
       '()
       (if (> (pos-row (cell-pos (caar rows))) i)
-          (cons '() (expand-rows rows (add1 i)))
+          (cons '() (expand-rows rows (add1 i))) ;; Make up for offset.
           (cons (car rows) (expand-rows (cdr rows) (add1 i))))))
 
-(define (tex/print-rows sheet)
+(define (tex/print-rows sheet cols)
   (string-join (map cdr (scan (λ (pre row) (cons (add1 (car pre))
                                                  (~a tex-newline
                                                      "\n"
                                                      (tex/begin-line (car pre))
-                                                     (tex/print-cells row))))
+                                                     (tex/print-cells row cols))))
                               (cons 1 "")
                               (expand-rows sheet)))))
 
@@ -324,14 +331,15 @@
 
 (define (tex/print-sheet sheet)
   (let [(cols (xls/columns sheet))]
-    (~a "\\begin{tabular}{" (tex/tab-format cols) "}\n"
+    (~a "\\begin{tabular}{" (tex/tab-format cols) "}\n\\hline\n"
+
         (tex/sheet-header cols)
-        (tex/print-rows sheet)
+        (tex/print-rows sheet cols)
         tex-newline
         "\n\\end{tabular}\n")))
 
 ;; Print a sheet from a file as Latex code.
-(define (print-sheet xls-file sheet-name r1c1)
+(define (print-sheet xls-file [sheet-name "Sheet1"] [r1c1 #f])
   (let ([sheet (xls/sheet->cells sheet-name (xls/read xls-file))])
     (display (tex/print-sheet (if r1c1
                                   sheet
