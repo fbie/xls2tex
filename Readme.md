@@ -4,7 +4,7 @@ A simple and incomplete tool to convert XLS formatted spreadsheets into nice loo
 
 Run it either with `racket xls2tex.rkt` or compile using `raco exe xls2tex.rkt`.
 
-## Why Does Anyone Need This? ##
+## Why Would Anyone Need This? ##
 
 I work on the experimental [Funcalc](http://www.itu.dk/people/sestoft/funcalc/) spreadsheet engine as part of my PhD project and typing spreadsheets in Latex by hand is boring.
 
