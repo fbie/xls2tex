@@ -99,7 +99,7 @@
 
 ;; Retrieve a formula from an element, if any.
 (define (xls/get-formula elem)
-  (xls/get 'ss:Formula (car elem)))
+  (or (xls/get 'ss:Formula elem) (xls/get 'ss:Formula (car elem))))
 
 ;; Retrieve an index offset from an element.
 (define (xls/get-index elem)
