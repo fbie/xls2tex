@@ -284,7 +284,7 @@
       (cell-expr c)
       "}"))
 
-(define (tex/beginline row)
+(define (tex/begin-line row)
   (~a row tex-tabsep))
 
 (define (tex/tab-format cols)
@@ -296,39 +296,46 @@
       (string-join (build-list cols (λ (n) (c1->column (add1 n))))
                    (~a tex-tabsep " "))))
 
+(define (tex/print-cells row)
+  (string-join (map cdr (scan (λ (pre cell)
+                                (cons (add1 (car pre)) (tex/cell->tex cell (car pre))))
+                              (cons 1 "")
+                              row))))
+
+(define (expand-rows rows [i 1])
+  (if (empty? rows)
+      '()
+      (if (> (pos-row (cell-pos (caar rows))) i)
+          (cons '() (expand-rows rows (add1 i)))
+          (cons (car rows) (expand-rows (cdr rows) (add1 i))))))
+
+(define (tex/print-rows sheet)
+  (string-join (map cdr (scan (λ (pre row) (cons (add1 (car pre))
+                                                 (~a tex-newline
+                                                     "\n"
+                                                     (tex/begin-line (car pre))
+                                                     (tex/print-cells row))))
+                              (cons 1 "")
+                              (expand-rows sheet)))))
+
 (define (xls/columns rows)
   (foldl max 0 (map pos-col (map cell-pos (map last rows)))))
 
-(define (tex/print-rows sheet)
-  (for/fold ([r 1])
-            ([row sheet])
-    ;; Newline comes always before cell contents.
-    (display tex-newline)
-    (newline)
-    (display (tex/beginline r))
-    (for/fold ([c 1])
-              ([cell row])
-      (display (tex/cell->tex cell c))
-      (add1 c))
-    (add1 r)))
 
 (define (tex/print-sheet sheet)
   (let [(cols (xls/columns sheet))]
-    (display (~a "\\begin{tabular}[" (tex/tab-format cols) "]"))
-    (newline)
-    (display (tex/sheet-header cols))
-    (tex/print-rows sheet)
-    (display tex-newline)
-    (newline)
-    (display "\\end{tabular}")
-    (newline)))
+    (~a "\\begin{tabular}{" (tex/tab-format cols) "}\n"
+        (tex/sheet-header cols)
+        (tex/print-rows sheet)
+        tex-newline
+        "\n\\end{tabular}\n")))
 
 ;; Print a sheet from a file as Latex code.
 (define (print-sheet xls-file sheet-name r1c1)
   (let ([sheet (xls/sheet->cells sheet-name (xls/read xls-file))])
-    (tex/print-sheet (if r1c1
-                         sheet
-                         (sheet/r1c1->a1 sheet)))))
+    (display (tex/print-sheet (if r1c1
+                                  sheet
+                                  (sheet/r1c1->a1 sheet))))))
 
 
 
