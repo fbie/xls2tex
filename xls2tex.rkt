@@ -260,7 +260,7 @@
 ;; Convert all cells in this collection of rows into A1 reference
 ;; format.
 (define (sheet/r1c1->a1 rows)
-  (for/list ([r rows])
+  (for/list [(r rows)]
     (for/list [(c r)]
       ;; Avoid unnecessary parsing and memory allocation.
       (if (string-prefix? (cell-expr c) "=")
