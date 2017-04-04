@@ -16,3 +16,4 @@ I work on the experimental [Funcalc](http://www.itu.dk/people/sestoft/funcalc/) 
  - [ ] Add margin coloring for interpreted and compiled sheets.
  - [ ] Add input, output and intermediate cell coloring.
  - [ ] Allow for specifying a cell range to display.
+ - [ ] Avoid `read-xml: parse-error: expected root element - received "\uFEFF"`.
