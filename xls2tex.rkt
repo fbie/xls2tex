@@ -320,6 +320,13 @@
   (display "\\end{tabular}")
   (newline))
 
+;; Print a sheet from a file as Latex code.
+(define (print-sheet xls-file sheet-name r1c1)
+  (let ([sheet (xls/sheet->cells sheet-name (xls/read xls-file))])
+    (tex/print-sheet (if r1c1
+                         sheet
+                         (sheet/r1c1->a1 sheet)))))
+
 
 
 ;;; Command line arguments and execution.
@@ -343,7 +350,4 @@
    #:args (filename)
    filename))
 
-(let ([sheet (xls/sheet->cells (sheet-name) (xls/read xls-file))])
-  (tex/print-sheet (if (r1c1)
-                       sheet
-                       (sheet/r1c1->a1 sheet))))
+(print-sheet xls-file (sheet-name) (r1c1))
